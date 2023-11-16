@@ -1,0 +1,142 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+
+```{r}
+
+pacman::p_load(tidyverse, lubridate, readxl, tidyquant, scales, googlesheets4, XLConnect, ggforce, rvest, writexl, fuzzyjoin)
+
+`%not_in%` <- purrr::negate(`%in%`)
+
+```
+
+
+```{r}
+
+caso_1 <- read_xlsx("libro_ejemplo.xlsx",
+                    sheet = "Caso_1")
+
+ROD <- read_xlsx("libro_ejemplo.xlsx",
+                    sheet = "ROD") 
+
+```
+
+
+# CASO 1
+
+```{r}
+
+roi <- "ROI M126785"
+
+ROD_t <- ROD %>% filter(ROI == roi)
+
+req <- ROD_t  %>% select(TIPO, ORIGEN, EMBARCADOR, NAVIERA) %>% 
+  unlist() %>% unname() %>% .[!is.na(.)] %>% paste0(. , collapse  = " - ")
+
+req
+
+servicios <- ROD_t %>%  select(FLETE, SEGURO, INTERNACION, TL)
+
+servicios
+
+tipo <- ROD_t %>% select(TIPO) %>% pull()
+
+detalle <- if(tipo != "FCL") {
+  
+  ROD_t %>% select(VOLUMEN, PESO) %>% 
+    slice() %>% unlist() %>% unname() %>% 
+    paste0(. , collapse  = " - ")
+  
+} else{
+  
+  ROD_t %>% select(`Container 20' ST`: `Container 40' ST`)
+  
+}
+
+detalle
+
+
+caso_1_t <- caso_1 %>% filter(`Referencia (ROI)` == roi) %>% 
+  mutate(TC = ifelse(is.na(TC), 1, TC),
+                              Monto = case_when(
+                                `Tipo de movimiento` %in% c("Seguro", "Margen seguro") ~ Monto/TC,
+                                TRUE ~ Monto
+                              )) %>% 
+  filter(`Tipo de movimiento` %not_in% c("AGA", "Saldo a favor", "Saldo en contra"),
+         `Tipo de documento` !=  "Provisión")
+
+
+margen_op <- caso_1_t %>% select(`Tipo de documento`, `Tipo de movimiento`, Monto, TC) %>% 
+  mutate(monto_final = Monto * TC,
+         monto_final = case_when(
+           `Tipo de movimiento` %in% c("Cliente", "Margen seguro") ~ monto_final,
+           TRUE ~ monto_final * -1
+         ))
+
+margen_operacional <- sum(margen_op$monto_final)
+
+
+dif_TC <- caso_1_t %>% filter(`Moneda de pago` == "USD") %>% 
+  mutate(TC_implicito = 800) %>% 
+  mutate(margen_bruto = Monto * TC,
+         margen_tc = Monto * TC_implicito,
+         efecto_tc = margen_tc - margen_bruto,
+         efecto_tc = case_when(
+           `Tipo de movimiento` %in% c("Cliente", "Margen seguro") ~ efecto_tc,
+           TRUE ~ efecto_tc * -1
+         )) 
+
+dif_TC_final <- sum(dif_TC$efecto_tc)
+
+facturas_exentas <- caso_1_t %>% 
+  filter(`Tipo de documento` == "Exenta") %>% 
+  mutate(Monto = ifelse(`Tipo de movimiento` == "Seguro", -Monto, Monto))
+
+exenta_embarcador <- facturas_exentas %>% 
+  filter(`Tipo de movimiento` == "Embarcador") %>% 
+  summarise(sum = sum(Monto)) %>% pull()
+
+exenta_shippter <- facturas_exentas %>% 
+  filter(`Tipo de movimiento` != "Embarcador") %>% 
+  summarise(sum = sum(Monto)) %>% pull()
+
+exenta_embarcador
+
+exenta_shippter
+
+```
+
+
+
+```{r}
+
+
+servicios <- ROD %>% filter(ROI == "ROI M126785") %>% 
+     select(FLETE, SEGURO, INTERNACION, TL) %>% 
+     slice_head(n = 1)
+
+TL <- servicios[4] %>% pull()
+
+
+a <- casos %>% filter(`Referencia (ROI)` == "ROI M126786") %>% 
+  group_by(`Tipo de movimiento`, `Tipo de documento`) %>% 
+  summarise(n = n()) 
+
+
+a_t <- a %>% filter(`Tipo de movimiento` %in% c("Embarcador", "Transporte Local"))
+
+
+base_estimada <- 
+  tibble("Tipo de movimiento" = c("Embarcador", "Embarcador", "Embarcador", "Transporte Local"),
+         "Tipo de documento" = c("Afecta", "Exenta", "Nota de credito", "Afecta"),
+         "estimado" = c(1,1,0,ifelse(TL == "V", 1, 0))) %>% 
+  left_join(a_t) %>% 
+  mutate(n = ifelse(is.na(n), 0, n),
+         union = paste0(n, "/", estimado),
+         correcto = ifelse(n>estimado, FALSE, TRUE))
+
+```
+
+
