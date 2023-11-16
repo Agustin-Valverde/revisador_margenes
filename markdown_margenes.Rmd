@@ -1,6 +1,6 @@
 ---
 title: "Ejemplo de rmarkdown"
-output: html_document
+output: github_document
 date: "`r Sys.Date()`"
 ---
 
