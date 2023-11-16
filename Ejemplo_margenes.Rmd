@@ -1,6 +1,10 @@
 ---
 title: "R Notebook"
+<<<<<<< HEAD
 output:
+=======
+output: html_notebook
+>>>>>>> d46956cc989cf9e8e44fec481750c81c4842271c
 ---
 
 
