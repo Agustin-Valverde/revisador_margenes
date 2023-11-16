@@ -1,2 +1,8 @@
-# revisador_margenes
-Ejemplo de panel para revisión semanal de margenes
+README
+================
+2023-11-16
+
+## Readme
+
+Este es un proyecto para la revisión semanal de margenes para la empresa
+Shippter Forwarding
